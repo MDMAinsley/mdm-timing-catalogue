@@ -17,4 +17,14 @@ The ledger contains cuts keyed by an internal ID, each with an episode triple, r
 
 Trusted reviewer approval takes precedence over community approval. Community approval requires more than 75 percent positive votes and at least five accounts. A software estimate can be exported as provisional when eligible. Intro and outro are selected independently. Playback snapshots contain digests, timings and review status. Keep individual votes, account IDs, playback URLs, torrent identifiers and raw media private.
 
-The Windows companion currently reads snapshots from disk. Automatic download, authenticated submissions and ratings in Kodi are planned. The catalogue includes no contributions yet.
+## Windows companion
+
+With Flix 0.15.3 or later, the MDM audio diagnostic bridge and the local FFmpeg and Chromaprint tools installed, run:
+
+```powershell
+python watch_hints.py --public-catalogue --fpcalc PATH_TO_FPCALC --output CACHE_DIRECTORY
+```
+
+The companion checks for a new snapshot on playback requests. It refreshes a valid cache after a day, keeps the last valid copy during an outage, and skips audio scans for episodes with no catalogue entry. Private test snapshots can still be selected with `--catalogue PATH`.
+
+Authenticated submissions and Kodi ratings are planned. The catalogue includes no contributions yet.

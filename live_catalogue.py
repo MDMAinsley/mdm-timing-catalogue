@@ -1,6 +1,7 @@
 """Read a locally provisioned snapshot and identify a cut from opening audio."""
 import hashlib
 import json
+import math
 import struct
 
 from catalogue import (Cut, Proposal, Review, RUNTIME_TOLERANCE, match_cut,
@@ -33,12 +34,21 @@ def load_snapshot(path):
     cuts = {}
     proposals = {}
     for key, row in data['cuts'].items():
+        episode = tuple(row['episode'])
+        duration = row['duration']
+        if (len(episode) != 3 or any(type(part) is not int for part in episode)
+                or episode[0] < 1 or episode[1] < 0 or episode[2] < 1
+                or type(duration) not in (int, float) or not math.isfinite(duration)
+                or not 60 <= duration <= 86400):
+            raise ValueError('catalogue_cut_invalid')
         anchors = tuple(tuple(anchor) for anchor in row['anchors'])
         if any(method != METHOD or position not in POSITIONS or len(digest) != 64
                or any(char not in '0123456789abcdef' for char in digest)
                for method, position, digest in anchors):
             raise ValueError('catalogue_anchor_invalid')
-        cuts[key] = Cut(tuple(row['episode']), row['duration'], anchors)
+        if len(anchors) != len(POSITIONS) or {anchor[1] for anchor in anchors} != set(POSITIONS):
+            raise ValueError('catalogue_anchor_coverage_invalid')
+        cuts[key] = Cut(episode, duration, anchors)
         if schema == 2:
             proposals[key] = {}
             for kind, marker in row['markers'].items():
