@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from live_catalogue import load_snapshot
+from export_catalogue import cut_identifier
 
 
 def build_queue(cuts, proposals, reviews, trusted_accounts, minimum_bad=10, *,
@@ -43,7 +44,7 @@ def build_queue(cuts, proposals, reviews, trusted_accounts, minimum_bad=10, *,
                         proposal.marker, proposal.record, proposal.revision]
             key = hashlib.sha256(json.dumps(identity, separators=(',', ':')).encode()).hexdigest()
             queue[key] = dict(
-                episode=cut.episode, duration=cut.duration, marker=proposal.marker,
+                cut=cut_identifier(cut),episode=cut.episode, duration=cut.duration, marker=proposal.marker,
                 revision=proposal.revision, start=proposal.start, end=proposal.end,
                 good=qualified['signed_in']['good']+qualified['anonymous']['good'],
                 bad=bad, reason='ten_bad_ratings',signed_in=counts['signed_in'],

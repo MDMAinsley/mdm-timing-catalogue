@@ -135,11 +135,13 @@ def validate_queue(path):
         raise ValueError('invalid_queue_schema')
     if not isinstance(data['entries'],dict) or len(data['entries'])>4000:
         raise ValueError('invalid_queue_entries')
-    expected={'episode','duration','marker','revision','start','end','good','bad','reason','signed_in','anonymous','eligible_anonymous'}
+    expected={'cut','episode','duration','marker','revision','start','end','good','bad','reason','signed_in','anonymous','eligible_anonymous'}
     from submission_api import HEX
     for key,row in data['entries'].items():
         if not isinstance(key,str) or not HEX.fullmatch(key) or not isinstance(row,dict) or set(row)!=expected:
             raise ValueError('invalid_queue_fields')
+        if not isinstance(row['cut'],str) or not HEX.fullmatch(row['cut']):
+            raise ValueError('invalid_queue_cut')
         # Reuse the strict timing validator without accepting account/device data.
         from submission_api import validate_proposal
         validate_proposal(dict(episode=row['episode'],duration=row['duration'],anchors=[],marker=row['marker'],
