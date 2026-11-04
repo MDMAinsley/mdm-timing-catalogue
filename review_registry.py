@@ -166,6 +166,9 @@ class Registry:
             return None
         observed=Cut(tuple(body['episode']),body['duration'],tuple(tuple(a) for a in body['anchors']))
         with self.db() as db:
+            identity=db.execute('SELECT linked_to FROM actors WHERE id=?',(actor,)).fetchone()
+            if not identity or identity['linked_to'] is not None:
+                return None
             old=db.execute('SELECT target,applied FROM catalogue_ingested WHERE receipt=?',(receipt,)).fetchone()
             if old:
                 clock=db.execute('SELECT sequence FROM catalogue_clock WHERE actor=? AND target=?',(actor,old['target'])).fetchone()

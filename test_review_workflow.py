@@ -117,6 +117,21 @@ class WorkflowTests(unittest.TestCase):
         self.assertFalse(self.send(1,'correction')['counted_vote'])
         self.assertEqual(self.app.votes.totals(target)['anonymous']['total'],0)
 
+    def test_linked_guest_backlog_does_not_break_export_or_double_count(self):
+        target=self.admit()
+        self.send(1)
+        guest=self.app.votes.anonymous(digest(self.token))
+        signed=self.app.votes.signed_in(987654)
+        self.app.votes.link(guest,signed)
+        process(self.directory)
+        counts=self.app.votes.totals(target)
+        self.assertEqual(counts['anonymous']['total'],0)
+        self.assertEqual(counts['signed_in']['total'],1)
+        self.assertEqual(self.call('/v1/proposals',dict(self.body,operation='c'*32,assessment='bad'),self.token)[0],401)
+        path=Path(self.temp.name)/'after-link'
+        bundle(self.directory,path)
+        validate_bundle(path)
+
     def test_new_revision_has_fresh_votes_and_old_or_withdrawn_targets_rejected(self):
         first=self.admit()
         self.approve(first)
