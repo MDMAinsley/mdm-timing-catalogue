@@ -11,6 +11,7 @@ import sqlite3
 import time
 
 from vote_store import Votes
+from review_registry import Registry
 
 HEX = re.compile(r'[0-9a-f]{64}')
 TOKEN = re.compile(r'[A-Za-z0-9_-]{43}')
@@ -35,7 +36,7 @@ def validate_proposal(body):
     if not isinstance(body, dict):
         raise Rejected(400, 'invalid_fields')
     extra = set(body) - set('episode duration anchors marker start end origin'.split())
-    if extra - {'assessment', 'reference'}:
+    if extra - {'assessment', 'reference', 'operation'}:
         raise Rejected(400, 'invalid_fields')
     fields({k:v for k,v in body.items() if k not in extra}, 'episode duration anchors marker start end origin')
     episode, duration = body['episode'], body['duration']
@@ -75,6 +76,11 @@ def validate_proposal(body):
                 or type(reference['revision']) is not int or reference['revision'] < 1):
             raise Rejected(400, 'invalid_reference')
         result['reference'] = reference
+    if 'operation' in body:
+        operation=body['operation']
+        if not isinstance(operation,str) or not re.fullmatch('[0-9a-f]{32}',operation):
+            raise Rejected(400,'invalid_operation')
+        result['operation']=operation
     return result
 
 
@@ -83,6 +89,7 @@ class App:
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=True)
         self.votes = Votes(self.directory / 'votes.sqlite')
+        self.registry = Registry(self.directory)
         with self.db() as db:
             db.executescript('''
                 CREATE TABLE IF NOT EXISTS credentials (
@@ -96,7 +103,11 @@ class App:
                     actor INTEGER NOT NULL, bucket INTEGER NOT NULL, count INTEGER NOT NULL,
                     PRIMARY KEY(actor,bucket)
                 );
+                CREATE TABLE IF NOT EXISTS ingestion (
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT, receipt TEXT NOT NULL UNIQUE
+                );
             ''')
+            db.execute('INSERT OR IGNORE INTO ingestion(receipt) SELECT id FROM inbox ORDER BY created,rowid')
 
     @contextmanager
     def db(self):
@@ -117,7 +128,12 @@ class App:
             row = db.execute('SELECT revoked FROM credentials WHERE hash=?', (key,)).fetchone()
         if not row or row['revoked']:
             raise Rejected(401, 'invalid_credential')
-        return self.votes.anonymous(key)
+        actor=self.votes.anonymous(key)
+        with self.votes.db() as db:
+            identity=db.execute('SELECT linked_to FROM actors WHERE id=?',(actor,)).fetchone()
+        if identity['linked_to'] is not None:
+            raise Rejected(401,'linked_credential_inactive')
+        return actor
 
     def limit(self, actor):
         bucket = int(time.time()) // 3600
@@ -164,20 +180,33 @@ class App:
         if path == '/v1/proposals':
             proposal = validate_proposal(body)
             payload = json.dumps(proposal, sort_keys=True, separators=(',', ':'), allow_nan=False)
-            identity = digest(str(actor) + ':' + payload)
+            identity = digest(str(actor) + ':' + (proposal['operation'] if 'operation' in proposal else payload))
             state = 'pending_review' if proposal['anchors'] else 'pending_cut_verification'
             with self.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                old=db.execute('SELECT payload FROM inbox WHERE id=?',(identity,)).fetchone()
+                if old and old['payload']!=payload:
+                    raise Rejected(400,'operation_already_used')
                 db.execute('INSERT OR IGNORE INTO inbox(id,actor,payload,created,state) VALUES(?,?,?,?,?)',
                            (identity, actor, payload, int(time.time()), state))
-            return 202, dict(receipt=identity, state=state, published=False, counted_vote=False)
+                db.execute('INSERT OR IGNORE INTO ingestion(receipt) VALUES(?)',(identity,))
+                sequence=db.execute('SELECT sequence FROM ingestion WHERE receipt=?',(identity,)).fetchone()[0]
+            vote=self.registry.apply(actor,identity,sequence,proposal)
+            if vote:
+                with self.db() as db:
+                    db.execute("UPDATE inbox SET state='feedback_recorded' WHERE id=?",(identity,))
+            return 202, dict(receipt=identity, state=state, published=False, counted_vote=bool(vote and vote['applied']),
+                             eligible_for_promotion=self.registry.eligible(actor))
         fields(body, 'target good')
         if not isinstance(body['target'], str) or not HEX.fullmatch(body['target']) or type(body['good']) is not bool:
             raise Rejected(400, 'invalid_vote')
         try:
+            if not self.registry.active(body['target']):
+                raise ValueError('inactive_target')
             self.votes.cast(actor, body['target'], body['good'])
         except ValueError:
             raise Rejected(404, 'unknown_or_inactive_target')
-        return 200, dict(state='recorded', cohort='anonymous', eligible_for_promotion=False)
+        return 200, dict(state='recorded', cohort='anonymous', eligible_for_promotion=self.registry.eligible(actor))
 
     def __call__(self, environ, start_response):
         try:

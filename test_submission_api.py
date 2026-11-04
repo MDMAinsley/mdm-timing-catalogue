@@ -85,7 +85,7 @@ class ApiTests(unittest.TestCase):
     def test_votes_known_targets_only_latest_vote_wins(self):
         token = self.register()
         self.assertEqual(self.request('/v1/votes', dict(target='a'*64, good=True), token)[0], 404)
-        target = self.app.votes.target('a'*64, 'intro', 'record', 1, 94, 126, 1323)
+        target = self.app.registry.admit(self.proposal(),confirmed_cut=True,operator='test administrator')
         for value in (True, True, False):
             self.assertEqual(self.request('/v1/votes', dict(target=target, good=value), token)[0], 200)
         with self.app.votes.db() as db:

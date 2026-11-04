@@ -8,6 +8,15 @@ from catalogue import select_timing
 from live_catalogue import load_snapshot
 
 
+def cut_identifier(cut):
+    identity = [cut.episode, float(cut.duration), sorted(set(cut.anchors))]
+    return hashlib.sha256(json.dumps(identity, separators=(',', ':')).encode()).hexdigest()
+
+
+def marker_identifier(cut_id, kind, start, end):
+    return hashlib.sha256(json.dumps([cut_id, kind, float(start), float(end)], separators=(',', ':')).encode()).hexdigest()
+
+
 def compile_snapshot(cuts, proposals, reviews, trusted_accounts, *, anonymous_reviews=(),
                      eligible_keys=(), linked_keys=(), anonymous_minimum=20):
     reviews=tuple(reviews)
@@ -18,7 +27,7 @@ def compile_snapshot(cuts, proposals, reviews, trusted_accounts, *, anonymous_re
     output = {}
     for key, cut in cuts.items():
         identity = [cut.episode, cut.duration, sorted(set(cut.anchors))]
-        cut_id = hashlib.sha256(json.dumps(identity, separators=(',', ':')).encode()).hexdigest()
+        cut_id = cut_identifier(cut)
         if cut_id in output:
             raise ValueError('duplicate_cut_identity')
         if len({position for _, position, _ in cut.anchors}) < 2:
@@ -30,8 +39,7 @@ def compile_snapshot(cuts, proposals, reviews, trusted_accounts, *, anonymous_re
                 linked_keys=linked_keys,anonymous_minimum=anonymous_minimum)
             if result:
                 proposal, tier = result
-                marker_identity = [cut_id, kind, proposal.start, proposal.end]
-                marker_id = hashlib.sha256(json.dumps(marker_identity).encode()).hexdigest()
+                marker_id = marker_identifier(cut_id, kind, proposal.start, proposal.end)
                 markers[kind] = dict(id=marker_id, revision=proposal.revision,
                                      start=proposal.start, end=proposal.end, tier=tier)
         output[cut_id] = dict(episode=cut.episode, duration=cut.duration,

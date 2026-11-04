@@ -101,36 +101,44 @@ class Votes:
         identity = [cut, marker, record, revision]
         key = hashlib.sha256(json.dumps(identity, separators=(',', ':')).encode()).hexdigest()
         with self.db() as database:
-            prior = database.execute('SELECT * FROM records WHERE record=?', (record,)).fetchone()
-            if prior and (prior['cut'] != cut or prior['marker'] != marker):
-                raise ValueError('record_belongs_to_different_cut_or_marker')
-            database.execute('INSERT OR IGNORE INTO records VALUES(?,?,?)', (record, cut, marker))
-            prior = database.execute('SELECT * FROM targets WHERE id=?', (key,)).fetchone()
-            if prior and tuple(prior[field] for field in ('start', 'end', 'duration')) != (start, end, duration):
-                raise ValueError('timing_revision_is_immutable')
-            database.execute('INSERT OR IGNORE INTO targets VALUES(?,?,?,?,?,?)',
-                             (key, record, revision, start, end, duration))
+            return self._target(database, key, cut, marker, record, revision, start, end, duration)
+
+    @staticmethod
+    def _target(database, key, cut, marker, record, revision, start, end, duration):
+        prior = database.execute('SELECT * FROM records WHERE record=?', (record,)).fetchone()
+        if prior and (prior['cut'] != cut or prior['marker'] != marker):
+            raise ValueError('record_belongs_to_different_cut_or_marker')
+        database.execute('INSERT OR IGNORE INTO records VALUES(?,?,?)', (record, cut, marker))
+        prior = database.execute('SELECT * FROM targets WHERE id=?', (key,)).fetchone()
+        if prior and tuple(prior[field] for field in ('start', 'end', 'duration')) != (start, end, duration):
+            raise ValueError('timing_revision_is_immutable')
+        database.execute('INSERT OR IGNORE INTO targets VALUES(?,?,?,?,?,?)',
+                         (key, record, revision, start, end, duration))
         return key
 
     def cast(self, actor, target, good):
         if type(actor) is not int or type(good) is not bool:
             raise ValueError('invalid_vote')
         with self.db() as database:
-            identity = database.execute('SELECT * FROM actors WHERE id=?', (actor,)).fetchone()
-            if not identity or identity['linked_to'] is not None:
-                raise ValueError('invalid_or_linked_guest_identity')
-            if not database.execute('SELECT 1 FROM targets WHERE id=?', (target,)).fetchone():
-                raise ValueError('unknown_vote_target')
-            previous = database.execute('SELECT good FROM votes WHERE actor=? AND target=?',
-                                        (actor, target)).fetchone()
-            if previous and previous['good'] == good:
-                return
-            event = database.execute('INSERT INTO events(actor,target,good) VALUES(?,?,?)',
-                                     (actor, target, good)).lastrowid
-            database.execute("""
-                INSERT INTO votes VALUES(?,?,?,?)
-                ON CONFLICT(actor,target) DO UPDATE SET good=excluded.good,event=excluded.event
-            """, (actor, target, good, event))
+            self._cast(database, actor, target, good)
+
+    @staticmethod
+    def _cast(database, actor, target, good):
+        identity = database.execute('SELECT * FROM actors WHERE id=?', (actor,)).fetchone()
+        if not identity or identity['linked_to'] is not None:
+            raise ValueError('invalid_or_linked_guest_identity')
+        if not database.execute('SELECT 1 FROM targets WHERE id=?', (target,)).fetchone():
+            raise ValueError('unknown_vote_target')
+        previous = database.execute('SELECT good FROM votes WHERE actor=? AND target=?',
+                                    (actor, target)).fetchone()
+        if previous and previous['good'] == good:
+            return
+        event = database.execute('INSERT INTO events(actor,target,good) VALUES(?,?,?)',
+                                 (actor, target, good)).lastrowid
+        database.execute("""
+            INSERT INTO votes VALUES(?,?,?,?)
+            ON CONFLICT(actor,target) DO UPDATE SET good=excluded.good,event=excluded.event
+        """, (actor, target, good, event))
 
     def link(self, guest, signed_in):
         """Call only after verifying possession of both identities."""

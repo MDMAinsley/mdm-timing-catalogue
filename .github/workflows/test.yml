@@ -12,3 +12,4 @@ jobs:
           python-version: '3.12'
       - run: python -m unittest discover
       - run: python validate_snapshot.py playback-snapshot.json
+      - run: python -c "from pathlib import Path; from review_workflow import validate_bundle; validate_bundle('.') if Path('catalogue-release.json').exists() else None"
