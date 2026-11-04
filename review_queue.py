@@ -7,13 +7,16 @@ from pathlib import Path
 from live_catalogue import load_snapshot
 
 
-def build_queue(cuts, proposals, reviews, trusted_accounts, minimum_bad=10):
+def build_queue(cuts, proposals, reviews, trusted_accounts, minimum_bad=10, *,
+                anonymous_reviews=(),eligible_keys=(),linked_keys=()):
     if type(minimum_bad) is not int or minimum_bad < 1:
         raise ValueError('invalid_review_threshold')
-    ballots = {}
-    for vote in reviews:
-        if type(vote.account) is int and vote.account > 0 and type(vote.good) is bool:
-            ballots.setdefault((vote.record, vote.revision), {})[vote.account] = vote.good
+    from vote_summary import summary
+    reviews=tuple(reviews)
+    anonymous_reviews=tuple(anonymous_reviews)
+    linked_keys=set(linked_keys)
+    eligible_keys=set(eligible_keys)
+    qualified_guests=[review for review in anonymous_reviews if review.contributor_hash in eligible_keys]
     queue = {}
     owners = {}
     for cut_key, cut in cuts.items():
@@ -31,8 +34,9 @@ def build_queue(cuts, proposals, reviews, trusted_accounts, minimum_bad=10):
         for proposal in latest.values():
             if proposal.withdrawn:
                 continue
-            votes = ballots.get((proposal.record, proposal.revision), {})
-            bad = sum(not good for good in votes.values())
+            counts=summary(reviews,anonymous_reviews,proposal.record,proposal.revision,linked_keys)
+            qualified=summary(reviews,qualified_guests,proposal.record,proposal.revision,linked_keys)
+            bad=qualified['signed_in']['bad']+qualified['anonymous']['bad']
             if bad < minimum_bad:
                 continue
             identity = [cut.episode, cut.duration, sorted(set(cut.anchors)),
@@ -41,7 +45,9 @@ def build_queue(cuts, proposals, reviews, trusted_accounts, minimum_bad=10):
             queue[key] = dict(
                 episode=cut.episode, duration=cut.duration, marker=proposal.marker,
                 revision=proposal.revision, start=proposal.start, end=proposal.end,
-                good=sum(votes.values()), bad=bad, reason='ten_bad_ratings',
+                good=qualified['signed_in']['good']+qualified['anonymous']['good'],
+                bad=bad, reason='ten_bad_ratings',signed_in=counts['signed_in'],
+                anonymous=counts['anonymous'],eligible_anonymous=qualified['anonymous'],
             )
     return dict(schema=1, entries=queue)
 

@@ -37,3 +37,7 @@ Authenticated submissions and Kodi ratings are planned. The catalogue includes n
 The vote-summary helper keeps anonymous-key votes and verified signed-in votes in separate totals and percentages. Each contributor's latest vote replaces the earlier one for a marker revision. Linked anonymous keys are excluded from guest totals to avoid counting both identities. These helpers consume records validated by the submission service; accepting a client-supplied account ID or trust flag would bypass that validation.
 
 The submission service, anonymous-key issuance, abuse screening and sign-in integration are still pending. Anonymous promotion thresholds and weighting have not been enabled.
+
+`vote_store.py` provides private SQLite storage for the service. A contributor has one current vote per identified cut, marker and timing record revision. Provider URL changes do not create new targets. Guest-to-account linking preserves an existing signed-in choice and invalidates the linked guest identity for future votes. All actor registration and linking methods are internal and require identity verification by the future HTTP service.
+
+The selection/export helpers accept anonymous reviews only when the service explicitly identifies their keys as eligible. The provisional quorum is twenty eligible anonymous voters versus five verified signed-in voters, with more than 75 percent positive required. Signed-in approval wins when both qualify. Eligibility screening and live submission are not enabled yet.

@@ -8,7 +8,13 @@ from catalogue import select_timing
 from live_catalogue import load_snapshot
 
 
-def compile_snapshot(cuts, proposals, reviews, trusted_accounts):
+def compile_snapshot(cuts, proposals, reviews, trusted_accounts, *, anonymous_reviews=(),
+                     eligible_keys=(), linked_keys=(), anonymous_minimum=20):
+    reviews=tuple(reviews)
+    anonymous_reviews=tuple(anonymous_reviews)
+    trusted_accounts=set(trusted_accounts)
+    eligible_keys=set(eligible_keys)
+    linked_keys=set(linked_keys)
     output = {}
     for key, cut in cuts.items():
         identity = [cut.episode, cut.duration, sorted(set(cut.anchors))]
@@ -19,7 +25,9 @@ def compile_snapshot(cuts, proposals, reviews, trusted_accounts):
             raise ValueError('insufficient_cut_anchors')
         markers = {}
         for kind in ('intro', 'outro'):
-            result = select_timing(proposals[key], reviews, trusted_accounts, kind, cut.duration)
+            result = select_timing(proposals[key], reviews, trusted_accounts, kind, cut.duration,
+                anonymous_reviews=anonymous_reviews,eligible_keys=eligible_keys,
+                linked_keys=linked_keys,anonymous_minimum=anonymous_minimum)
             if result:
                 proposal, tier = result
                 marker_identity = [cut_id, kind, proposal.start, proposal.end]

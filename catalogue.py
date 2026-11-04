@@ -80,14 +80,23 @@ def corrected_range(corrections, duration, minimum_votes=5):
     return tuple(median(intervals[index][boundary] for index in winners[0]) for boundary in (0, 1))
 
 
-def select_timing(proposals, reviews, trusted_accounts, marker, duration, minimum_votes=5):
+def select_timing(proposals, reviews, trusted_accounts, marker, duration, minimum_votes=5,
+                  *, anonymous_reviews=(), eligible_keys=(), linked_keys=(), anonymous_minimum=20):
     """Return (proposal, provenance) for one already matched cut and marker.
 
     Reviews arrive in authenticated event order. A newer vote replaces the
     account's previous vote on the same revision.
     """
-    if minimum_votes < 1 or not math.isfinite(duration) or duration <= 0:
+    if (type(minimum_votes) is not int or minimum_votes < 1
+            or type(anonymous_minimum) is not int or anonymous_minimum < minimum_votes
+            or not math.isfinite(duration) or duration <= 0):
         return None
+    from vote_summary import summary
+    reviews=tuple(reviews)
+    trusted_accounts=set(trusted_accounts)
+    linked_keys=set(linked_keys)
+    eligible_keys=set(eligible_keys)
+    qualified_guests=[review for review in anonymous_reviews if review.contributor_hash in eligible_keys]
     latest = {}
     for proposal in proposals:
         if proposal.marker != marker:
@@ -111,12 +120,18 @@ def select_timing(proposals, reviews, trusted_accounts, marker, duration, minimu
         trusted_votes = {votes[account] for account in trusted_accounts if account in votes}
         if False in trusted_votes:
             continue
-        good = sum(votes.values())
+        counts=summary(reviews,qualified_guests,proposal.record,proposal.revision,linked_keys)
+        signed=counts['signed_in'];guest=counts['anonymous']
+        signed_quorum=signed['total']>=minimum_votes
+        guest_quorum=guest['total']>=anonymous_minimum
         if True in trusted_votes:
-            eligible.append((3, proposal, "trusted reviewer"))
-        elif len(votes) >= minimum_votes and 4 * good > 3 * len(votes):
+            eligible.append((4, proposal, "trusted reviewer"))
+        elif signed_quorum and 4*signed['good']>3*signed['total']:
+            eligible.append((3, proposal, "community reviewed"))
+        elif not signed_quorum and guest_quorum and 4*guest['good']>3*guest['total']:
             eligible.append((2, proposal, "community reviewed"))
-        elif proposal.software and not (len(votes) >= minimum_votes and 2 * good <= len(votes)):
+        elif proposal.software and not (signed_quorum and signed['good']<=signed['bad']
+                or not signed_quorum and guest_quorum and guest['good']<=guest['bad']):
             eligible.append((1, proposal, "software generated"))
 
     if not eligible:
