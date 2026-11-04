@@ -57,6 +57,8 @@ def load_snapshot(path):
                         or tier not in ('software generated', 'community reviewed', 'trusted reviewer')):
                     raise ValueError('catalogue_marker_invalid')
                 proposals[key][kind] = dict(start=start, end=end, tier=tier)
+                if 'id' in marker and 'revision' in marker:
+                    proposals[key][kind].update(id=marker['id'], revision=marker['revision'])
         else:
             proposals[key] = [Proposal(**proposal) for proposal in row['proposals']]
     if schema == 2:
