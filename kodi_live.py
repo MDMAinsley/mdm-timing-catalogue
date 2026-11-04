@@ -367,12 +367,16 @@ def main():
             else:
                 catalogue = load_snapshot(args.catalogue)
             if not catalogue or not catalogue[0]:
-                print(json.dumps({'status': 'public_catalogue_empty_or_unavailable'}))
-                return
+                if not args.save_cut:
+                    print(json.dumps({'status': 'public_catalogue_empty_or_unavailable'}))
+                    return
+                # Explicit private first-cut review may bootstrap an empty catalogue.
+                # Normal catalogue lookups still avoid scans when nothing can match.
+                catalogue = ({}, {})
             episodes = {cut.episode for cut in catalogue[0].values()}
             item, sample, metrics = capture(args.ffmpeg, args.fpcalc, args.profile, 30,
                                             use_bridge=True, expected_file=args.expected_file,
-                                            catalogue_episodes=episodes)
+                                            catalogue_episodes=episodes or None)
             markers = apply_capture(args.profile, item, sample, metrics, catalogue)
             if args.save_cut:
                 from live_catalogue import save_cut_draft
