@@ -31,3 +31,9 @@ python watch_hints.py --public-catalogue --fpcalc PATH_TO_FPCALC --output CACHE_
 The companion checks for a new snapshot on playback requests. It refreshes a valid cache after a day, keeps the last valid copy during an outage, and skips audio scans for episodes with no catalogue entry. Private test snapshots can still be selected with `--catalogue PATH`.
 
 Authenticated submissions and Kodi ratings are planned. The catalogue includes no contributions yet.
+
+## Anonymous and signed-in feedback
+
+The vote-summary helper keeps anonymous-key votes and verified signed-in votes in separate totals and percentages. Each contributor's latest vote replaces the earlier one for a marker revision. Linked anonymous keys are excluded from guest totals to avoid counting both identities. These helpers consume records validated by the submission service; accepting a client-supplied account ID or trust flag would bypass that validation.
+
+The submission service, anonymous-key issuance, abuse screening and sign-in integration are still pending. Anonymous promotion thresholds and weighting have not been enabled.
