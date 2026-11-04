@@ -45,6 +45,8 @@ The selection/export helpers accept anonymous reviews only when the service expl
 
 `submission_api.py` supplies a WSGI application factory, `submission_api:create_app()`, backed by private SQLite storage selected with `MDM_SKIP_DATA`. Run behind a production WSGI server and TLS reverse proxy. Never expose it without connection-level signup throttling, request size limits and restricted database permissions.
 
+Clients may send an empty anchor list when no cut fingerprint is available. These entries receive `pending_cut_verification` and cannot establish cross-stream identity. Optional `assessment` (good, bad, correction) and a marker/revision reference preserve feedback for review. Inbox acknowledgements are not counted votes or public approvals; canonical target provisioning and review remain separate.
+
 The API uses `POST /v1/contributors` with `{"consent":true}` to issue an anonymous bearer key. Store the returned key privately. `POST /v1/proposals` accepts only episode, duration, two position-bound audio anchors, marker, start, end and origin. A receipt means the proposal reached the pending inbox. It does not mean it was verified or published. `POST /v1/votes` accepts a known server target and boolean good. Clients cannot create rating targets, assert reviewer status, or promote records. GitHub sign-in and automatic publication are not implemented.
 
 Raw keys are not retained. Anonymous key hashes, ballots and pending payloads are private data and must never be included in public exports. The server should not log request bodies or authorization headers. Infrastructure can still see connection metadata. Tests use only synthetic data.

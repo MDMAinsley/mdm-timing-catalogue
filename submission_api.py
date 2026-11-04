@@ -32,7 +32,12 @@ def fields(value, names):
 
 
 def validate_proposal(body):
-    fields(body, 'episode duration anchors marker start end origin')
+    if not isinstance(body, dict):
+        raise Rejected(400, 'invalid_fields')
+    extra = set(body) - set('episode duration anchors marker start end origin'.split())
+    if extra - {'assessment', 'reference'}:
+        raise Rejected(400, 'invalid_fields')
+    fields({k:v for k,v in body.items() if k not in extra}, 'episode duration anchors marker start end origin')
     episode, duration = body['episode'], body['duration']
     if (not isinstance(episode, list) or len(episode) != 3
             or any(type(part) is not int for part in episode)
@@ -45,20 +50,32 @@ def validate_proposal(body):
     if not 60 <= duration <= 86400 or not 0 <= body['start'] < body['end'] <= duration:
         raise Rejected(400, 'invalid_range')
     anchors = body['anchors']
-    if (not isinstance(anchors, list) or len(anchors) != 2
+    if (not isinstance(anchors, list) or len(anchors) not in (0, 2)
             or any(not isinstance(a, list) or len(a) != 3 for a in anchors)):
         raise Rejected(400, 'invalid_anchors')
     if any(a[0] != METHOD or type(a[1]) is not int or a[1] not in (0, 16)
            or not isinstance(a[2], str) or not HEX.fullmatch(a[2]) for a in anchors):
         raise Rejected(400, 'invalid_anchors')
-    if {a[1] for a in anchors} != {0, 16}:
+    if anchors and {a[1] for a in anchors} != {0, 16}:
         raise Rejected(400, 'invalid_anchors')
     if body['marker'] not in ('intro', 'outro') or body['origin'] not in ('manual', 'software', 'chapters'):
         raise Rejected(400, 'invalid_marker')
     # Normalize numeric representations and anchor order for retry deduplication.
-    return dict(episode=episode, duration=float(duration), anchors=sorted(anchors),
+    result = dict(episode=episode, duration=float(duration), anchors=sorted(anchors),
                 marker=body['marker'], start=float(body['start']), end=float(body['end']),
                 origin=body['origin'])
+    if 'assessment' in body:
+        if body['assessment'] not in ('good', 'bad', 'correction'):
+            raise Rejected(400, 'invalid_assessment')
+        result['assessment'] = body['assessment']
+    if 'reference' in body:
+        reference = body['reference']
+        fields(reference, 'marker revision')
+        if (not isinstance(reference['marker'], str) or not HEX.fullmatch(reference['marker'])
+                or type(reference['revision']) is not int or reference['revision'] < 1):
+            raise Rejected(400, 'invalid_reference')
+        result['reference'] = reference
+    return result
 
 
 class App:
@@ -148,10 +165,11 @@ class App:
             proposal = validate_proposal(body)
             payload = json.dumps(proposal, sort_keys=True, separators=(',', ':'), allow_nan=False)
             identity = digest(str(actor) + ':' + payload)
+            state = 'pending_review' if proposal['anchors'] else 'pending_cut_verification'
             with self.db() as db:
-                db.execute('INSERT OR IGNORE INTO inbox(id,actor,payload,created) VALUES(?,?,?,?)',
-                           (identity, actor, payload, int(time.time())))
-            return 202, dict(receipt=identity, state='pending_review', published=False)
+                db.execute('INSERT OR IGNORE INTO inbox(id,actor,payload,created,state) VALUES(?,?,?,?,?)',
+                           (identity, actor, payload, int(time.time()), state))
+            return 202, dict(receipt=identity, state=state, published=False, counted_vote=False)
         fields(body, 'target good')
         if not isinstance(body['target'], str) or not HEX.fullmatch(body['target']) or type(body['good']) is not bool:
             raise Rejected(400, 'invalid_vote')

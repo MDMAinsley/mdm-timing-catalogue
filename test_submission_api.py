@@ -72,6 +72,16 @@ class ApiTests(unittest.TestCase):
             db.execute('UPDATE credentials SET revoked=1')
         self.assertEqual(self.request('/v1/proposals', self.proposal(), token)[0], 401)
 
+    def test_missing_audio_evidence_stays_unverified_and_rating_is_not_counted(self):
+        body = dict(self.proposal(), anchors=[], assessment='bad', reference=dict(marker='b'*64, revision=1))
+        status, result = self.request('/v1/proposals', body, self.register())
+        self.assertEqual(status, 202)
+        self.assertEqual(result['state'], 'pending_cut_verification')
+        self.assertFalse(result['published'])
+        self.assertFalse(result['counted_vote'])
+        with self.app.votes.db() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM votes').fetchone()[0], 0)
+
     def test_votes_known_targets_only_latest_vote_wins(self):
         token = self.register()
         self.assertEqual(self.request('/v1/votes', dict(target='a'*64, good=True), token)[0], 404)
