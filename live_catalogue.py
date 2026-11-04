@@ -3,6 +3,8 @@ import hashlib
 import json
 import math
 import struct
+import tempfile
+from pathlib import Path
 
 from catalogue import (Cut, Proposal, Review, RUNTIME_TOLERANCE, match_cut,
                        write_markers, write_playback_match)
@@ -84,6 +86,17 @@ def apply_capture(profile, item, sample, metrics, snapshot):
     if metrics['sample_start_seconds'] != 0:
         return {}
     observed = Cut(episode_key(item), metrics['playback_duration'], opening_anchors(sample.words))
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w',encoding='utf8',dir=profile,delete=False) as stream:
+            temporary = Path(stream.name)
+            json.dump(dict(schema=1,file_id=sample.file_id,tmdb_id=item['tmdb_id'],
+                           season=item['season'],episode=item['episode'],
+                           duration=observed.duration,anchors=observed.anchors),stream)
+        temporary.replace(Path(profile)/'shared_cut_evidence.json')
+    finally:
+        if temporary:
+            temporary.unlink(missing_ok=True)
     metrics['usable_anchors'] = len(observed.anchors)
     metrics['runtime_compatible_cuts'] = sum(
         cut.episode == observed.episode
