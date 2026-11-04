@@ -41,3 +41,11 @@ The submission service, anonymous-key issuance, abuse screening and sign-in inte
 `vote_store.py` provides private SQLite storage for the service. A contributor has one current vote per identified cut, marker and timing record revision. Provider URL changes do not create new targets. Guest-to-account linking preserves an existing signed-in choice and invalidates the linked guest identity for future votes. All actor registration and linking methods are internal and require identity verification by the future HTTP service.
 
 The selection/export helpers accept anonymous reviews only when the service explicitly identifies their keys as eligible. The provisional quorum is twenty eligible anonymous voters versus five verified signed-in voters, with more than 75 percent positive required. Signed-in approval wins when both qualify. Eligibility screening and live submission are not enabled yet.
+# Contribution inbox deployment
+
+`submission_api.py` supplies a WSGI application factory, `submission_api:create_app()`, backed by private SQLite storage selected with `MDM_SKIP_DATA`. Run behind a production WSGI server and TLS reverse proxy. Never expose it without connection-level signup throttling, request size limits and restricted database permissions.
+
+The API uses `POST /v1/contributors` with `{"consent":true}` to issue an anonymous bearer key. Store the returned key privately. `POST /v1/proposals` accepts only episode, duration, two position-bound audio anchors, marker, start, end and origin. A receipt means the proposal reached the pending inbox. It does not mean it was verified or published. `POST /v1/votes` accepts a known server target and boolean good. Clients cannot create rating targets, assert reviewer status, or promote records. GitHub sign-in and automatic publication are not implemented.
+
+Raw keys are not retained. Anonymous key hashes, ballots and pending payloads are private data and must never be included in public exports. The server should not log request bodies or authorization headers. Infrastructure can still see connection metadata. Tests use only synthetic data.
+
