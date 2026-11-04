@@ -21,7 +21,8 @@ def export(data,root):
     destination=root/name
     manifest=bundle(data,destination)
     validate_bundle(destination)
-    os.chmod(destination,0o2750)
+    # The service's primary group owns these files; no setgid permission is needed.
+    os.chmod(destination,0o750)
     for path in destination.iterdir():
         os.chmod(path,0o640)
     temporary=None
