@@ -4,6 +4,7 @@ This is not a full-file hash or intro detection. It requires complete evidence,
 and never exports media bytes, the address, ETag, local paths or file length.
 """
 import hashlib
+from http.client import HTTPException
 import os
 import re
 import stat
@@ -97,7 +98,7 @@ class HTTPReader:
                     raise IdentityError('unsafe_redirect')
                 self.url=target
                 continue
-            except (OSError,ValueError):
+            except (OSError,ValueError,HTTPException):
                 raise IdentityError('range_request_unavailable') from None
             with response:
                 self.check()
@@ -123,7 +124,10 @@ class HTTPReader:
                 remaining=BLOCK
                 while remaining:
                     self.check()
-                    chunk=response.read1(min(remaining,8192))
+                    try:
+                        chunk=response.read1(min(remaining,8192))
+                    except (OSError,HTTPException):
+                        raise IdentityError('range_payload_unavailable') from None
                     if not chunk:
                         raise IdentityError('truncated_range')
                     self.bytes+=len(chunk)

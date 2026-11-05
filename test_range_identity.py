@@ -1,4 +1,5 @@
 import io
+from http.client import IncompleteRead
 import os
 from pathlib import Path
 import tempfile
@@ -164,3 +165,14 @@ class RangeIdentityTests(unittest.TestCase):
             path.write_bytes(b'\0'*(1024*1024))
             with self.assertRaisesRegex(identity.IdentityError,'low_information'):
                 identity.fingerprint_file(path)
+
+    def test_broken_chunked_response_becomes_a_safe_retryable_identity_error(self):
+        host=Host()
+        def broken(response,index):
+            def read(n):raise IncompleteRead(b'private media',100)
+            response.read1=read
+            return response
+        host.modify=broken
+        with self.assertRaisesRegex(identity.IdentityError,'range_payload_unavailable') as caught:
+            identity.fingerprint_http('https://host.invalid/private',opener=host)
+        self.assertNotIn('private',str(caught.exception))
