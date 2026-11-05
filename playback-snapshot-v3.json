@@ -19,6 +19,28 @@
             16,
             "046a6690278c7b669925a5113c40da23ebf2d83ac486a4ea180d9d8c82b5594a"
           ]
+        ],
+        [
+          [
+            "file-ranges-sha256-32k-v1",
+            0,
+            "22bcbb9b851d403a8ab232107f025c20f734753e40ebe53598958fce4cf11356"
+          ],
+          [
+            "file-ranges-sha256-32k-v1",
+            25,
+            "6848fd3240e0f200e214c98f1f7e8722933b0f47c1aacb94066ac8d1d4cab014"
+          ],
+          [
+            "file-ranges-sha256-32k-v1",
+            75,
+            "cddd9032dbae9fc36665e70a569736b210856a21f7654d309a9d5fe657c7bbc0"
+          ],
+          [
+            "file-ranges-sha256-32k-v1",
+            100,
+            "c3f630992c8eb43cf370ce2475a9262a72244d265747dac24429eba861d95ef7"
+          ]
         ]
       ],
       "markers": {
