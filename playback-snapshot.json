@@ -1,4 +1,34 @@
 {
-  "cuts": {},
+  "cuts": {
+    "373afb84bcb44387e0fbf1894f6f659e6c9acd5dc7ff473a78d47ae20e1ea2cf": {
+      "anchors": [
+        [
+          "chromaprint2-fixed-32-v1",
+          0,
+          "0ea99c65c440078a8115af38c22b769436e9f2cc61d9639f55e7978e627f1021"
+        ],
+        [
+          "chromaprint2-fixed-32-v1",
+          16,
+          "046a6690278c7b669925a5113c40da23ebf2d83ac486a4ea180d9d8c82b5594a"
+        ]
+      ],
+      "duration": 1313.248,
+      "episode": [
+        2316,
+        4,
+        10
+      ],
+      "markers": {
+        "intro": {
+          "end": 128.0,
+          "id": "7e949f01fad4388abed6f24da113a0d6b2d4e636c2bc95daae939b413672aff9",
+          "revision": 1,
+          "start": 96.0,
+          "tier": "trusted reviewer"
+        }
+      }
+    }
+  },
   "schema": 2
 }

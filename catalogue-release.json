@@ -1,10 +1,10 @@
 {
-  "cuts": 0,
+  "cuts": 1,
   "files": {
-    "playback-snapshot.json": "25d5e1cb511936816c261b7278d3c3260063c420d81f8fdaa61b87f3b13b953b",
+    "playback-snapshot.json": "9729f87c44bb087c664a1d69c11f72260bd6edf64bb17b0030970d9217a2eec2",
     "review-queue.json": "53b1d5fa3751b1a25686a85480f637e11a9b2feafa908dfeea4abca15d9aef7b"
   },
-  "markers": 0,
+  "markers": 1,
   "review_entries": 0,
   "schema": 1
 }
