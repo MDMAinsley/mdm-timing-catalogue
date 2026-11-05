@@ -1,6 +1,7 @@
 {
   "cuts": 1,
   "files": {
+    "playback-snapshot-v3.json": "0d12334e02c32a37195dacce85c6e301c269d9f2ee4d32d41340dfef153a86de",
     "playback-snapshot.json": "9729f87c44bb087c664a1d69c11f72260bd6edf64bb17b0030970d9217a2eec2",
     "review-queue.json": "53b1d5fa3751b1a25686a85480f637e11a9b2feafa908dfeea4abca15d9aef7b"
   },
