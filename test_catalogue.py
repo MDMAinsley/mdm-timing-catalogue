@@ -6,9 +6,9 @@ from catalogue import Cut, Proposal, Review, corrected_range, match_cut, select_
 class CatalogueTests(unittest.TestCase):
     def test_same_episode_two_cuts_and_ambiguous_evidence(self):
         episode = (123, 4, 15)
-        common = ("v1", 30, "common")
-        short = Cut(episode, 1313, (common, ("v1", 60, "short")))
-        long = Cut(episode, 1314, (common, ("v1", 60, "long")))
+        common = ("chromaprint2-fixed-32-v1", 0, "a"*64)
+        short = Cut(episode, 1313, (common, ("chromaprint2-fixed-32-v1", 16, "b"*64)))
+        long = Cut(episode, 1314, (common, ("chromaprint2-fixed-32-v1", 16, "c"*64)))
         self.assertEqual(match_cut(short, {"short": short, "long": long}), "short")
         self.assertEqual(match_cut(Cut(episode, 1315.48, short.anchors), {"short": short}), "short")
         self.assertIsNone(match_cut(Cut(episode, 1316.01, short.anchors), {"short": short}))

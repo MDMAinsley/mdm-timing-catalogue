@@ -13,6 +13,7 @@ from catalogue import Cut, Proposal, Review, match_cut
 from export_catalogue import cut_identifier, marker_identifier
 from vote_store import Votes
 from vote_summary import AnonymousReview
+from cut_evidence import normalize,MAX_GROUPS
 
 
 def key(value):
@@ -46,6 +47,9 @@ class Registry:
                 '''CREATE TABLE IF NOT EXISTS catalogue_clock (
                     actor INTEGER NOT NULL, target TEXT NOT NULL, sequence INTEGER NOT NULL,
                     PRIMARY KEY(actor,target))''',
+                '''CREATE TABLE IF NOT EXISTS catalogue_evidence (
+                    cut TEXT NOT NULL REFERENCES catalogue_cuts(id), identity TEXT NOT NULL,
+                    anchors TEXT NOT NULL, PRIMARY KEY(cut,identity))''',
             )
             for statement in statements:
                 db.execute(statement)
@@ -56,6 +60,52 @@ class Registry:
         return {r['id']:Cut(tuple(json.loads(r['episode'])),r['duration'],
                            tuple(tuple(a) for a in json.loads(r['anchors'])))
                 for r in db.execute('SELECT * FROM catalogue_cuts')}
+
+    @staticmethod
+    def _groups(db,cuts):
+        result={key:[normalize(cut.anchors)] for key,cut in cuts.items()}
+        for row in db.execute('SELECT cut,anchors FROM catalogue_evidence'):
+            group=normalize(json.loads(row['anchors']))
+            if group not in result[row['cut']]:
+                result[row['cut']].append(group)
+        return result
+
+    @staticmethod
+    def _matches(db,observed,cuts):
+        return Registry.matching(observed,cuts,Registry._groups(db,cuts))
+
+    @staticmethod
+    def matching(observed,cuts,evidence):
+        group=normalize(observed.anchors)
+        return [key for key,cut in cuts.items() if cut.episode==observed.episode
+                and abs(cut.duration-observed.duration)<=3 and group in evidence[key]]
+
+    def add_evidence(self,cut,evidence,*,confirmed_file=False,operator=''):
+        self._operator(operator)
+        group=normalize(evidence)
+        if confirmed_file is not True:
+            raise ValueError('independent_same_file_confirmation_required')
+        with self.db() as db:
+            cuts=self._cuts(db)
+            if cut not in cuts:
+                raise ValueError('unknown_cut')
+            current=cuts[cut]
+            observed=Cut(current.episode,current.duration,group)
+            if any(other!=cut for other in self._matches(db,observed,cuts)):
+                raise ValueError('evidence_already_matches_another_cut')
+            known=self._groups(db,cuts)[cut]
+            if group in known:
+                return key(group)
+            if len(known)>=MAX_GROUPS:
+                raise ValueError('cut_evidence_limit')
+            identity=key(group)
+            db.execute('INSERT INTO catalogue_evidence VALUES(?,?,?)',(cut,identity,json.dumps(group)))
+            self._audit(db,'admit_evidence',cut,operator)
+            return identity
+
+    def evidence(self):
+        with self.db() as db:
+            return self._groups(db,self._cuts(db))
 
     @staticmethod
     def _operator(operator):
@@ -69,7 +119,7 @@ class Registry:
                    (action,subject,operator,int(time.time())))
 
     def admit(self, body, *, confirmed_cut=False, software=False, operator=''):
-        """Human administration must verify the evidence belongs to the stated edit.
+        """Human administration must verify the complete evidence identifies the edit.
 
         This does not approve the marker or grant a contributor eligibility.
         One canonical marker history per cut/kind has immutable revisions.
@@ -77,16 +127,15 @@ class Registry:
         from submission_api import validate_proposal
         body=validate_proposal(body)
         self._operator(operator)
-        if confirmed_cut is not True or len(body['anchors'])!=2 or type(software) is not bool:
-            raise ValueError('verified_cut_with_audio_evidence_required')
+        if confirmed_cut is not True or not body['anchors'] or type(software) is not bool:
+            raise ValueError('verified_cut_with_complete_evidence_required')
         observed=Cut(tuple(body['episode']),float(body['duration']),tuple(tuple(a) for a in body['anchors']))
         with self.db() as db:
             cuts=self._cuts(db)
-            cut_id=match_cut(observed,cuts)
-            near=[c for c in cuts.values() if c.episode==observed.episode and set(c.anchors)==set(observed.anchors)
-                  and abs(c.duration-observed.duration)<=3]
-            if near and not cut_id:
+            matches=self._matches(db,observed,cuts)
+            if len(matches)>1:
                 raise ValueError('ambiguous_cut_evidence')
+            cut_id=matches[0] if matches else None
             if not cut_id:
                 cut_id=cut_identifier(observed)
                 db.execute('INSERT INTO catalogue_cuts VALUES(?,?,?,?)',
@@ -162,7 +211,7 @@ class Registry:
         Legacy payload-only receipts lack operation identity and remain pending.
         Client-supplied reference IDs never substitute for matched cut evidence.
         """
-        if body.get('assessment') not in ('good','bad') or not body.get('operation') or len(body['anchors'])!=2:
+        if body.get('assessment') not in ('good','bad') or not body.get('operation') or not body['anchors']:
             return None
         observed=Cut(tuple(body['episode']),body['duration'],tuple(tuple(a) for a in body['anchors']))
         with self.db() as db:
@@ -173,9 +222,10 @@ class Registry:
             if old:
                 clock=db.execute('SELECT sequence FROM catalogue_clock WHERE actor=? AND target=?',(actor,old['target'])).fetchone()
                 return dict(target=old['target'],applied=bool(old['applied'] and clock and clock['sequence']==sequence and self._active(db,old['target'])))
-            cut_id=match_cut(observed,self._cuts(db))
-            if not cut_id:
+            matches=self._matches(db,observed,self._cuts(db))
+            if len(matches)!=1:
                 return None
+            cut_id=matches[0]
             rows=db.execute('''SELECT targets.*,catalogue_markers.public_id FROM targets
                 JOIN records USING(record) JOIN catalogue_markers ON targets.id=catalogue_markers.target
                 WHERE records.cut=? AND records.marker=? AND catalogue_markers.state='active' ''',

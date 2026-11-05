@@ -13,6 +13,8 @@ from export_catalogue import compile_snapshot
 from review_queue import build_queue
 from review_registry import Registry
 from validate_snapshot import validate
+from cut_evidence import AUDIO
+import modern_catalogue
 
 
 def receipts(directory):
@@ -44,20 +46,22 @@ def correction_candidates(directory):
     registry=Registry(directory)
     with registry.db() as db:
         cuts=registry._cuts(db)
+        evidence=registry._groups(db,cuts)
         actors={r['id']:dict(r) for r in db.execute('''SELECT actors.*,catalogue_policy.eligible
                 FROM actors LEFT JOIN catalogue_policy ON actors.id=catalogue_policy.actor''')}
     latest={}
     for row in receipts(directory):
         body=json.loads(row['payload'])
         identity=actors.get(row['actor'])
-        if (body.get('assessment')!='correction' or not body.get('operation') or len(body.get('anchors',[]))!=2
+        if (body.get('assessment')!='correction' or not body.get('operation') or not body.get('anchors')
                 or not identity or identity['linked_to'] is not None):
             continue
         if identity['kind']=='anonymous' and not identity['eligible']:
             continue
-        cut=match_cut(Cut(tuple(body['episode']),body['duration'],tuple(tuple(a) for a in body['anchors'])),cuts)
-        if not cut:
+        matches=Registry.matching(Cut(tuple(body['episode']),body['duration'],tuple(tuple(a) for a in body['anchors'])),cuts,evidence)
+        if len(matches)!=1:
             continue
+        cut=matches[0]
         latest[(cut,body['marker'],identity['kind'],row['actor'])]=(body['start'],body['end'])
     groups={}
     for (cut,marker,kind,actor),bounds in latest.items():
@@ -88,7 +92,8 @@ def report(directory):
             body=json.loads(row['payload'])
             pending.append(dict(receipt=row['id'],episode=body['episode'],duration=body['duration'],
                 marker=body['marker'],start=body['start'],end=body['end'],assessment=body.get('assessment'),
-                audio_evidence=bool(body['anchors']),state=row['state']))
+                audio_evidence=bool(body['anchors'] and body['anchors'][0][0]==AUDIO),
+                evidence_method=body['anchors'][0][0] if body['anchors'] else None,state=row['state']))
     queue=build_queue(cuts,proposals,signed,trusted,**options)
     return dict(schema=1,cuts=len(cuts),received=len(rows),states=states,pending=pending,
                 flagged=queue['entries'],corrections=correction_candidates(directory))
@@ -99,14 +104,24 @@ def bundle(directory,destination):
     process(directory)
     registry=Registry(directory)
     cuts,proposals,signed,trusted,options=registry.ledger()
-    snapshot=compile_snapshot(cuts,proposals,signed,trusted,**options)
+    all_snapshot=compile_snapshot(cuts,proposals,signed,trusted,**options)
+    identities=registry.evidence()
+    legacy_cuts={}
+    for key,row in all_snapshot['cuts'].items():
+        audio=next((group for group in identities[key] if group[0][0]==AUDIO),None)
+        if audio:
+            legacy_cuts[key]=dict(row,anchors=audio)
+    snapshot=dict(schema=2,cuts=legacy_cuts)
+    modern=dict(schema=3,cuts={key:dict(episode=row['episode'],duration=row['duration'],
+                 identities=identities[key],markers=row['markers']) for key,row in all_snapshot['cuts'].items()})
+    modern_catalogue.validate(modern)
     queue=build_queue(cuts,proposals,signed,trusted,**options)
     target=Path(destination)
     target.mkdir(parents=True,exist_ok=False)
     # Keep files private until a publisher validates and copies just these exports.
     try:
         os.chmod(target,0o700)
-        for name,value in [('playback-snapshot.json',snapshot),('review-queue.json',queue)]:
+        for name,value in [('playback-snapshot.json',snapshot),('playback-snapshot-v3.json',modern),('review-queue.json',queue)]:
             raw=(json.dumps(value,sort_keys=True,indent=2,allow_nan=False)+'\n').encode()
             if len(raw)>2_000_000:
                 raise ValueError('public_export_limit')
@@ -114,9 +129,9 @@ def bundle(directory,destination):
         validate(target/'playback-snapshot.json')
         validate_queue(target/'review-queue.json')
         files={name:hashlib.sha256((target/name).read_bytes()).hexdigest()
-               for name in ('playback-snapshot.json','review-queue.json')}
-        manifest=dict(schema=1,files=files,cuts=len(snapshot['cuts']),
-                      markers=sum(len(c['markers']) for c in snapshot['cuts'].values()),
+               for name in ('playback-snapshot.json','playback-snapshot-v3.json','review-queue.json')}
+        manifest=dict(schema=1,files=files,cuts=len(modern['cuts']),
+                      markers=sum(len(c['markers']) for c in modern['cuts'].values()),
                       review_entries=len(queue['entries']))
         (target/'catalogue-release.json').write_text(json.dumps(manifest,sort_keys=True,indent=2)+'\n',encoding='utf8')
     except BaseException:
@@ -171,12 +186,31 @@ def validate_bundle(directory):
     manifest=json.loads((directory/'catalogue-release.json').read_bytes())
     if not isinstance(manifest,dict) or set(manifest)!={'schema','files','cuts','markers','review_entries'} or type(manifest['schema']) is not int or manifest['schema']!=1:
         raise ValueError('invalid_release_manifest')
-    if set(manifest['files'])!={'playback-snapshot.json','review-queue.json'}:
+    old_files={'playback-snapshot.json','review-queue.json'}
+    new_files=old_files|{'playback-snapshot-v3.json'}
+    if set(manifest['files']) not in (old_files,new_files):
         raise ValueError('invalid_release_files')
     if any(type(manifest[k]) is not int or manifest[k]<0 for k in ('cuts','markers','review_entries')):
         raise ValueError('invalid_release_counts')
-    cuts,markers=validate(directory/'playback-snapshot.json')
+    validate(directory/'playback-snapshot.json')
+    legacy=json.loads((directory/'playback-snapshot.json').read_bytes())
+    if set(manifest['files'])==new_files:
+        modern=modern_catalogue.read(directory/'playback-snapshot-v3.json')
+    else:
+        # Old published bundles remain verifiable during a rolling upgrade.
+        modern=modern_catalogue.validate(dict(schema=3,cuts={key:dict(episode=row['episode'],duration=row['duration'],
+            identities=[row['anchors']],markers=row['markers']) for key,row in legacy['cuts'].items()}))
+    for key,row in legacy['cuts'].items():
+        modern_row=modern['cuts'].get(key)
+        if (not modern_row or row['episode']!=modern_row['episode'] or row['duration']!=modern_row['duration']
+                or row['markers']!=modern_row['markers'] or row['anchors'] not in modern_row['identities']):
+            raise ValueError('legacy_and_modern_catalogue_disagree')
+    cuts=len(modern['cuts'])
+    markers=sum(len(row['markers']) for row in modern['cuts'].values())
     queue=validate_queue(directory/'review-queue.json')
+    if any(row['cut'] not in modern['cuts'] or row['episode']!=modern['cuts'][row['cut']]['episode']
+           or row['duration']!=modern['cuts'][row['cut']]['duration'] for row in queue['entries'].values()):
+        raise ValueError('review_queue_cut_mismatch')
     if (cuts,markers,len(queue['entries']))!=(manifest['cuts'],manifest['markers'],manifest['review_entries']):
         raise ValueError('release_count_mismatch')
     for name,expected in manifest['files'].items():
@@ -211,6 +245,11 @@ def main():
     withdraw=commands.add_parser('withdraw')
     withdraw.add_argument('target')
     withdraw.add_argument('--operator',required=True)
+    alias=commands.add_parser('evidence')
+    alias.add_argument('cut')
+    alias.add_argument('anchors',type=Path)
+    alias.add_argument('--confirmed-file',action='store_true')
+    alias.add_argument('--operator',required=True)
     args=parser.parse_args()
     registry=Registry(args.data)
     if args.command=='report':
@@ -231,6 +270,13 @@ def main():
     elif args.command=='review':
         registry.review(args.target,args.reviewer,args.good,operator=args.operator)
         result=dict(reviewed=True)
+    elif args.command=='evidence':
+        with args.anchors.open(encoding='utf8') as stream:
+            raw=stream.read(4097)
+        if len(raw)>4096:
+            parser.error('Evidence input too large')
+        identity=registry.add_evidence(args.cut,json.loads(raw),confirmed_file=args.confirmed_file,operator=args.operator)
+        result=dict(evidence=identity)
     else:
         registry.withdraw(args.target,operator=args.operator)
         result=dict(withdrawn=True)

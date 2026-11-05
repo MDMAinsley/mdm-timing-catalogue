@@ -41,16 +41,21 @@ def match_cut(observed, candidates):
     if not math.isfinite(observed.duration) or observed.duration <= 0:
         return None
     matches = []
-    observed_anchors = set(observed.anchors)
+    from cut_evidence import normalize
+    try:
+        observed_anchors = normalize(observed.anchors)
+    except ValueError:
+        return None
     for cut_id, cut in candidates.items():
         if cut.episode != observed.episode or not math.isfinite(cut.duration):
             continue
         if abs(cut.duration - observed.duration) > RUNTIME_TOLERANCE:
             continue
-        shared = observed_anchors.intersection(cut.anchors)
-        positions = {position for method, position, digest in shared if method and digest}
-        if len(positions) >= 2 and max(positions) - min(positions) >= 15:
-            matches.append(cut_id)
+        try:
+            if normalize(cut.anchors)==observed_anchors:
+                matches.append(cut_id)
+        except ValueError:
+            continue
     return matches[0] if len(matches) == 1 else None
 
 

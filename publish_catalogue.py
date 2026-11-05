@@ -1,4 +1,4 @@
-"""Publish only three validated public files using a repository-specific deploy key."""
+"""Publish only the four validated public files using a repository-specific deploy key."""
 import argparse
 import hashlib
 import os
@@ -10,7 +10,7 @@ from export_worker import RELEASE
 from review_workflow import validate_bundle
 
 REMOTE='git@github.com:MDMAinsley/mdm-timing-catalogue.git'
-PUBLIC=('playback-snapshot.json','review-queue.json','catalogue-release.json')
+PUBLIC=('playback-snapshot.json','playback-snapshot-v3.json','review-queue.json','catalogue-release.json')
 
 
 def git(path,*args):
@@ -29,7 +29,7 @@ def publish(release,checkout):
     manifest=validate_bundle(release)
     # Read bytes once before touching Git, so later file changes cannot race validation.
     content={name:(release/name).read_bytes() for name in PUBLIC}
-    for name in ('playback-snapshot.json','review-queue.json'):
+    for name in ('playback-snapshot.json','playback-snapshot-v3.json','review-queue.json'):
         if hashlib.sha256(content[name]).hexdigest()!=manifest['files'][name]:
             raise ValueError('bundle_changed_during_publication')
     import json

@@ -12,6 +12,7 @@ import time
 
 from vote_store import Votes
 from review_registry import Registry
+from cut_evidence import normalize
 
 HEX = re.compile(r'[0-9a-f]{64}')
 TOKEN = re.compile(r'[A-Za-z0-9_-]{43}')
@@ -51,14 +52,13 @@ def validate_proposal(body):
     if not 60 <= duration <= 86400 or not 0 <= body['start'] < body['end'] <= duration:
         raise Rejected(400, 'invalid_range')
     anchors = body['anchors']
-    if (not isinstance(anchors, list) or len(anchors) not in (0, 2)
-            or any(not isinstance(a, list) or len(a) != 3 for a in anchors)):
+    if not isinstance(anchors,list):
         raise Rejected(400, 'invalid_anchors')
-    if any(a[0] != METHOD or type(a[1]) is not int or a[1] not in (0, 16)
-           or not isinstance(a[2], str) or not HEX.fullmatch(a[2]) for a in anchors):
-        raise Rejected(400, 'invalid_anchors')
-    if anchors and {a[1] for a in anchors} != {0, 16}:
-        raise Rejected(400, 'invalid_anchors')
+    if anchors:
+        try:
+            normalize(anchors)
+        except ValueError:
+            raise Rejected(400,'invalid_anchors')
     if body['marker'] not in ('intro', 'outro') or body['origin'] not in ('manual', 'software', 'chapters'):
         raise Rejected(400, 'invalid_marker')
     # Normalize numeric representations and anchor order for retry deduplication.
